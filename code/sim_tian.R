@@ -153,7 +153,7 @@ for (i in 1:kk_T) {
   
   W_star.scaled <- scale(W_star)
   # beta_hat <- glm(Y_lm ~ W_star +0 , family = gaussian)$coef
-  lasso.model.cv <- cv.glmnet(x = W_star, y = Y, family = "binomial", alpha = 1, nfolds = 10) %>% plot
+  lasso.model.cv <- cv.glmnet(x = W_star, y = Y, family = "binomial", alpha = 1, nfolds = 10)
   
   lasso.model <- glmnet(x = W_star, y = Y, family = "binomial", alpha = 1)
   

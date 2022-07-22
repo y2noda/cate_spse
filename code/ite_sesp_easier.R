@@ -9,7 +9,7 @@ rm(list = ls(all.names = TRUE))　
 
 # set.seed(12345)
 # サンプルサイズ
-n = 100
+n = 1000
 
 # シミュレーションの繰り返し数
 kk_T <- 50
@@ -19,7 +19,7 @@ pb <- txtProgressBar(min = 1, max = kk_T, style = 3)
 
 # 共変量行列の次元
 # 100以上でglmはエラーになる
-nval <- 2
+nval <- 1
 
 # results.beta_hat <- data.frame(matrix(vector(), kk_T, nval))
 results.corr <- data.frame(matrix(NaN,nrow = kk_T, ncol=2))
@@ -63,7 +63,7 @@ for (i in 1:kk_T) {
   
   # 交互作用項
   # beta_0 <- replace(rep(0,nval + 1), c(1,2,3,4,5), c(0.4, 0.8, -0.8, 0.8, -0.8))
-  beta_0 <- replace(rep(0,nval + 1), c(1,2,3), c(0.4, 0.8, -0.8))
+  beta_0 <- c(0.4, 0.8, 0.8)
   
   # 主効果項
   # alpha_0 <- replace(rep(0,nval + 1), 
@@ -71,10 +71,10 @@ for (i in 1:kk_T) {
   #                    c(sqrt(6)^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1)
   # )
   
-  alpha_0 <- replace(rep(0,nval + 1), 
-                     c(1,2,3),
-                     c(sqrt(6)^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1)
-  )
+  # alpha_0 <- replace(rep(0,nval + 1), 
+  #                    c(1,2,3),
+  #                    c(sqrt(6)^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1)
+  # )
   
   # 連続の場合
   # Y_lm <- (rep(alpha_0[1], n) + (XX %*% alpha_0[-1]))^2 + (rep(beta_0[1], n) + (XX %*% beta_0[-1]) + (XX[,1]*XX[,2] *0.8))*TT + sqrt(2)*rnorm(n)
@@ -84,12 +84,21 @@ for (i in 1:kk_T) {
   
   # ２値の場合
   # Y_lm <- (rep(alpha_0[1], n) + (XX %*% alpha_0[-1]))^2 + (rep(beta_0[1], n) + (XX %*% beta_0[-1]) + (XX[,1]*XX[,2] *0.8))*TT + sqrt(2)*rnorm(n)
-  Y_lm <- (rep(beta_0[1], n) + (XX %*% beta_0[-1]) + (XX[,1]*XX[,2] *0.8))*TT + sqrt(2)*rnorm(n)
-  Y <- ifelse(Y_lm >=0, 1,0)
+  Y_lm <- (rep(beta_0[1],n) + beta_0[2]*XX[,1])*TT
+  # Y <- ifelse(Y_lm >=0, 1,0)
+  
+  p_Y <- exp(Y_lm)/(1+exp(Y_lm))
+  
+  Y <- rep(0, n)
+  for(j in 1:n){
+    Y[j] <-rbinom(1, size=1, prob=p_Y[j])
+  }
+  
   
   # lm <- 1.6 * (0.5 + XX[,1] - XX[,2] + XX[,3] - XX[,4] + XX[,1]*XX[,2])
-  lm <- 2 * 0.8 * (0.5 + XX[,1] - XX[,2] + XX[,1]*XX[,2])
-  score_true <- (exp(lm/2)-1) / (exp(lm/2)+1)
+  bx <- 2*(beta_0[1] + beta_0[2]*XX[,1])
+  score_true <- (exp(bx/2)-1) / (exp(bx/2)+1)
+  # score_true <- (1-exp(bx)) / (1+exp(bx))
   
   
   
@@ -189,21 +198,31 @@ for (i in 1:kk_T) {
   
   
   ## パラメータ推定----
+  par_list <- c()
+  for ( j in 1:ncol(W_star)) {
+    par_list <- c(par_list, paste("W_star",j,sep = ""))
+  }
+
+  colnames(W)<-par_list
+
+  
+  W_df <- data.frame(W)
+  W_star_df <- data.frame(W_star)
   
   library(mgcv)
   # モデルの作成
-  lm.model <- gam(Y ~ W_star, data=airquality, family=binomial(link="logit"), drop.intercept=TRUE)        #　線形回帰
-  gam.model <- gam(Y ~ s(W_star), data=airquality, family=binomial(link="logit"), drop.intercept = TRUE)    #　平滑化スプライン
+  ml <- glm(Y~W_star-1, family=binomial)
+  lm.model <- gam(Y ~ W_star, family=binomial(link="logit"), drop.intercept=TRUE)        #　線形回帰
+  gam.model <- gam(Y ~ s(W_star), family=binomial(link="logit"), drop.intercept = TRUE)    #　平滑化スプライン
   
-  lm.pred <- predict(lm.model, W %>% data.frame())
-  gam.pred <- predict(gam.model, W %>% data.frame())
+  lm.pred <- predict(ml, newdata= data.frame(W[,1]), type="link")
+  gam.pred <- predict.gam(gam.model, newdata = W_df, type="link")
   
   lm.score <- (exp(lm.pred/2)-1) / (exp(lm.pred/2)+1)
   gam.score <- (exp(gam.pred/2)-1) / (exp(gam.pred/2)+1)
   
   lm.corr <- cor(score_true, lm.score)
   gam.corr <- cor(score_true, gam.score)
-  
   
   
   plot(Y ~ W[,2])
