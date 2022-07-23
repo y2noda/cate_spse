@@ -2,6 +2,9 @@ library(tidyverse)
 library(ggplot2)
 library(MASS)
 library(glmnet)
+library(mgcv)
+
+library(gt)
 
 ## シュミレーション設定----
 # 初期化
@@ -19,17 +22,23 @@ pb <- txtProgressBar(min = 1, max = kk_T, style = 3)
 
 # 共変量行列の次元
 # 100以上でglmはエラーになる
-nval <- 1
+nval <- 2
 
 # results.beta_hat <- data.frame(matrix(vector(), kk_T, nval))
 results.corr <- data.frame(matrix(NaN,nrow = kk_T, ncol=2))
-colnames(results.corr) <- c("Modified covariate", "new")
+colnames(results.corr) <- c("lm", "gam")
 
-results.bias <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
-colnames(results.bias) <- c("Modified covariate", "new")
+results.bias1 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
+colnames(results.bias1) <- c("lm", "gam")
 
-results.var <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
-colnames(results.var) <- c("Modified covariate", "new")
+results.bias10 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
+colnames(results.bias10) <- c("lm", "gam")
+
+results.bias100 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
+colnames(results.bias100) <- c("lm", "gam")
+
+results.bias1000 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
+colnames(results.bias1000) <- c("lm", "gam")
 
 for (i in 1:kk_T) {
   setTxtProgressBar(pb,i)
@@ -71,10 +80,10 @@ for (i in 1:kk_T) {
   #                    c(sqrt(6)^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1)
   # )
   
-  # alpha_0 <- replace(rep(0,nval + 1), 
-  #                    c(1,2,3),
-  #                    c(sqrt(6)^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1)
-  # )
+  alpha_0 <- replace(rep(0,nval + 1),
+                     c(1,2,3),
+                     c(sqrt(6)^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1)
+  )
   
   # 連続の場合
   # Y_lm <- (rep(alpha_0[1], n) + (XX %*% alpha_0[-1]))^2 + (rep(beta_0[1], n) + (XX %*% beta_0[-1]) + (XX[,1]*XX[,2] *0.8))*TT + sqrt(2)*rnorm(n)
@@ -83,8 +92,9 @@ for (i in 1:kk_T) {
   # score_true <- 1.6 * (0.5 + XX[,1] - XX[,2] + XX[,3] - XX[,4] + XX[,1]*XX[,2])
   
   # ２値の場合
-  # Y_lm <- (rep(alpha_0[1], n) + (XX %*% alpha_0[-1]))^2 + (rep(beta_0[1], n) + (XX %*% beta_0[-1]) + (XX[,1]*XX[,2] *0.8))*TT + sqrt(2)*rnorm(n)
-  Y_lm <- (rep(beta_0[1],n) + beta_0[2]*XX[,1])*TT
+  Y_lm <- (rep(alpha_0[1], n) + (XX %*% alpha_0[-1]))^2 + (rep(beta_0[1], n) + (XX %*% beta_0[-1]) + (XX[,1]*XX[,2] *0.8))*TT + sqrt(2)*rnorm(n)
+  # Y_lm <- (rep(beta_0[1],n) + beta_0[2]*XX[,1])*TT
+  
   # Y <- ifelse(Y_lm >=0, 1,0)
   
   p_Y <- exp(Y_lm)/(1+exp(Y_lm))
@@ -96,8 +106,11 @@ for (i in 1:kk_T) {
   
   
   # lm <- 1.6 * (0.5 + XX[,1] - XX[,2] + XX[,3] - XX[,4] + XX[,1]*XX[,2])
-  bx <- 2*(beta_0[1] + beta_0[2]*XX[,1])
+  # bx <- 2*(beta_0[1] + beta_0[2]*XX[,1])
+  bx <- 2*(beta_0[1] + beta_0[2]*XX[,1] + beta_0[3]*XX[,2] + 0.8*XX[,1]*XX[,2])
+  
   score_true <- (exp(bx/2)-1) / (exp(bx/2)+1)
+  
   # score_true <- (1-exp(bx)) / (1+exp(bx))
   
   
@@ -198,24 +211,28 @@ for (i in 1:kk_T) {
   
   
   ## パラメータ推定----
+  
+  # dfの準備
   par_list <- c()
   for ( j in 1:ncol(W_star)) {
     par_list <- c(par_list, paste("W_star",j,sep = ""))
   }
 
   colnames(W)<-par_list
-
+  colnames(W_star)<-par_list
   
   W_df <- data.frame(W)
-  W_star_df <- data.frame(W_star)
   
-  library(mgcv)
+  YW_star_df <- data.frame(Y,W_star)
+  YW_df <- data.frame(Y,W)
+  
   # モデルの作成
-  ml <- glm(Y~W_star-1, family=binomial)
-  lm.model <- gam(Y ~ W_star, family=binomial(link="logit"), drop.intercept=TRUE)        #　線形回帰
-  gam.model <- gam(Y ~ s(W_star), family=binomial(link="logit"), drop.intercept = TRUE)    #　平滑化スプライン
+  # ml <- glm(Y~W_star-1, family=binomial)
+  lm.model <- gam(Y ~ W_star1 + W_star2 + W_star3, data=YW_star_df, family=binomial(link="logit"), drop.intercept=TRUE)        #　線形回帰
+  gam.model <- gam(Y ~ W_star1 + s(W_star2, W_star3), data = YW_star_df, family=binomial(link="logit"), drop.intercept = TRUE)    #　平滑化スプライン
   
-  lm.pred <- predict(ml, newdata= data.frame(W[,1]), type="link")
+  # スコア計算
+  lm.pred <- predict(lm.model, newdata=W_df, type="link")
   gam.pred <- predict.gam(gam.model, newdata = W_df, type="link")
   
   lm.score <- (exp(lm.pred/2)-1) / (exp(lm.pred/2)+1)
@@ -225,11 +242,32 @@ for (i in 1:kk_T) {
   gam.corr <- cor(score_true, gam.score)
   
   
-  plot(Y ~ W[,2])
+  # 結果保存
+  results.corr[i,1] <- lm.corr
+  results.corr[i,2] <- gam.corr
   
-  lines(lm.pred ~ W[,2], col=2, lwd=2)
-  lines(gam.pred ~ W_star[,2], col=4, lwd=2)
+  results.bias1[i,1] <- lm.score[1] - score_true[1]
+  results.bias1[i,2] <- gam.score[1] - score_true[1]
   
+  results.bias10[i,1] <- lm.score[10] - score_true[10]
+  results.bias10[i,2] <- gam.score[10] - score_true[10]
+  
+  results.bias100[i,1] <- lm.score[100] - score_true[100]
+  results.bias100[i,2] <- gam.score[100] - score_true[100]
+  
+  results.bias1000[i,1] <- lm.score[1000] - score_true[1000]
+  results.bias1000[i,2] <- gam.score[1000] - score_true[1000]
+  
+  
+  # 図示
+  # plot(YW_star_df$Y ~ YW_df$W_star2)
+  # 
+  # sigmoid = function(x) {1 / (1 + exp(-x))}
+  # 
+  # lines(sigmoid(lm.pred) ~ YW_df$W_star2, col=2, lwd=0.1)
+  # lines(sigmoid(gam.pred) ~ YW_df$W_star2, col=4, lwd=0.1)
+  # 
+  # vis.gam(gam.model, color="cm", theta=45)
   
   
   
@@ -314,30 +352,30 @@ for (i in 1:kk_T) {
   
   ## ２値の場合
   # modified covariance method
-  W <- cbind(rep(1, n), XX)
-  W_star <- W * TT/2
-  
-  W_star.scaled <- scale(W_star)
-  # beta_hat <- glm(Y_lm ~ W_star +0 , family = gaussian)$coef
-  lasso.model.cv <- cv.glmnet(x = W_star, y = Y_star, family = "binomial", alpha = 1, nfolds = 10)
-  
-  lasso.model <- glmnet(x = W_star, y = Y_star, family = "binomial", alpha = 1)
-  
-  mc_pred <- predict(lasso.model.cv,
-                     newx = W,
-                     alpha=1,
-                     s = lasso.model.cv$lambda.min)
-  
-  score_mc <- (exp(mc_pred/2)-1) / (exp(mc_pred/2)+1)
-  
-  corr.mc <- cor(score_true, score_mc)
-  
-  results.corr[i,1] <- corr.mc
-  
-  
-  results.bias[i,1] <- mean(score_true - score_mc)
-  
-  results.var[i,1] <- var(score_true - score_mc)
+  # W <- cbind(rep(1, n), XX)
+  # W_star <- W * TT/2
+  # 
+  # W_star.scaled <- scale(W_star)
+  # # beta_hat <- glm(Y_lm ~ W_star +0 , family = gaussian)$coef
+  # lasso.model.cv <- cv.glmnet(x = W_star, y = Y_star, family = "binomial", alpha = 1, nfolds = 10)
+  # 
+  # lasso.model <- glmnet(x = W_star, y = Y_star, family = "binomial", alpha = 1)
+  # 
+  # mc_pred <- predict(lasso.model.cv,
+  #                    newx = W,
+  #                    alpha=1,
+  #                    s = lasso.model.cv$lambda.min)
+  # 
+  # score_mc <- (exp(mc_pred/2)-1) / (exp(mc_pred/2)+1)
+  # 
+  # corr.mc <- cor(score_true, score_mc)
+  # 
+  # results.corr[i,1] <- corr.mc
+  # 
+  # 
+  # results.bias[i,1] <- mean(score_true - score_mc)
+  # 
+  # results.var[i,1] <- var(score_true - score_mc)
   # 
   
   # Full regression
@@ -373,13 +411,34 @@ for (i in 1:kk_T) {
 }
 
 
-results.corr %>% boxplot()
+##　ボックスプロット----
+# results.corr %>% boxplot()
+# results.bias1 %>% boxplot()
+# results.bias10 %>% boxplot()
+# results.bias100 %>% boxplot()
+# results.bias1000 %>% boxplot()
 
-results.bias %>% boxplot()
-results.var %>% boxplot()
+
+## result_dfの作成----
+result_df <- data.frame(
+  group = c("lm","gam"),
+  corr=results.corr %>% apply(2, mean) %>%  round(digits = 5),
+  bias1=results.bias1 %>% apply(2,mean) %>% round(digits = 5), 
+  bias10=results.bias10 %>% apply(2,mean) %>% round(digits = 5),
+  bias100=results.bias100 %>% apply(2,mean) %>% round(digits = 5),
+  bias1000=results.bias1000 %>% apply(2,mean) %>% round(digits = 5)
+  )
+
+# result_df %>% pivot_longer(cols = c("corr","bias1","bias10","bias100","bias1000"),names_to = "group")
+
+## テーブル出力----
+export_tb <- result_df %>% gt(groupname_col = "group")
+
+gtsave(export_tb, "./results/fig/res_table_ex2.png")
+
 
 ## アウトプット
-export_data <- results.corr
+# export_data <- results.corr
 
 # write_csv2(export_data, file = "~/Projects/gamma_DR_ver0.1/results/ite_sesp/0709.csv")
 
