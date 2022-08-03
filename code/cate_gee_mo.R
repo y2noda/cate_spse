@@ -26,22 +26,21 @@ pb <- txtProgressBar(min = 1, max = kk_T, style = 3)
 nval <- 2
 
 # results.beta_hat <- data.frame(matrix(vector(), kk_T, nval))
-results.bias_m <- data.frame(matrix(NaN,nrow = kk_T, ncol=2))
-colnames(results.bias_m) <- c("glm", "gee (Modified Outcome)")
+
+results.corr <- data.frame(matrix(NaN,nrow = kk_T, ncol=2))
+colnames(results.corr) <- c("glm", "gee (Modified Outcome)")
 
 results.bias1 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
-colnames(results.bias1) <- c("lm", "gam")
+colnames(results.bias1) <- c("glm", "gee (Modified Outcome)")
 
 results.bias10 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
-colnames(results.bias10) <- c("lm", "gam")
+colnames(results.bias10) <- c("glm", "gee (Modified Outcome)")
 
 results.bias100 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
-colnames(results.bias100) <- c("lm", "gam")
+colnames(results.bias100) <- c("glm", "gee (Modified Outcome)")
 
 results.bias1000 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
-colnames(results.bias1000) <- c("lm", "gam")
-
-
+colnames(results.bias1000) <- c("glm", "gee (Modified Outcome)")
 
 
 for (i in 1:kk_T) {
@@ -84,13 +83,13 @@ for (i in 1:kk_T) {
   #                    c(sqrt(6)^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1)
   # )
   
-  # alpha_0 <- replace(rep(0,nval + 1),
-  #                    c(1,2,3),
-  #                    c(sqrt(6)^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1)
-  # )
+  alpha_0 <- replace(rep(0,nval + 1),
+                     c(1,2,3),
+                     c(sqrt(6)^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1)
+  )
   
   
-  alpha_0 <- c(0.2, 0.7, 0.7)
+  # alpha_0 <- c(0.2, 0.7, 0.7)
   
   # 連続の場合
   # Y_lm <- (rep(alpha_0[1], n) + (XX %*% alpha_0[-1]))^2 + (rep(beta_0[1], n) + (XX %*% beta_0[-1]) + (XX[,1]*XX[,2] *0.8))*TT + sqrt(2)*rnorm(n)
@@ -99,11 +98,11 @@ for (i in 1:kk_T) {
   # score_true <- 1.6 * (0.5 + XX[,1] - XX[,2] + XX[,3] - XX[,4] + XX[,1]*XX[,2])
   
   # ２値の場合
-  # Y_lm <- (rep(alpha_0[1], n) + (XX %*% alpha_0[-1]))^2 + (rep(beta_0[1], n) + (XX %*% beta_0[-1]) + (XX[,1]*XX[,2] *0.8))*TT + sqrt(2)*rnorm(n)
+  Y_lm <- (rep(alpha_0[1], n) + (XX %*% alpha_0[-1]))^2 + (rep(beta_0[1], n) + (XX %*% beta_0[-1]) + (XX[,1]*XX[,2] *0.8))*TT + sqrt(2)*rnorm(n)
   # Y_lm <- (rep(beta_0[1],n) + beta_0[2]*XX[,1])*TT
   
   # 主効果のみ
-  Y_lm <- rep(alpha_0[1], n) + (XX %*% alpha_0[-1])
+  # Y_lm <- rep(alpha_0[1], n) + (XX %*% alpha_0[-1])
   
   
   # Y <- ifelse(Y_lm >=0, 1,0)
@@ -118,11 +117,10 @@ for (i in 1:kk_T) {
   
   # lm <- 1.6 * (0.5 + XX[,1] - XX[,2] + XX[,3] - XX[,4] + XX[,1]*XX[,2])
   # bx <- 2*(beta_0[1] + beta_0[2]*XX[,1])
-  # bx <- 2*(beta_0[1] + beta_0[2]*XX[,1] + beta_0[3]*XX[,2] + 0.8*XX[,1]*XX[,2])
-  # 
-  # score_true <- (exp(bx/2)-1) / (exp(bx/2)+1)
+  bx <- 2*(beta_0[1] + beta_0[2]*XX[,1] + beta_0[3]*XX[,2] + 0.8*XX[,1]*XX[,2])
+
+  score_true <- (exp(bx/2)-1) / (exp(bx/2)+1)
   
-  # score_true <- (1-exp(bx)) / (1+exp(bx))
   
   
   
@@ -143,14 +141,14 @@ for (i in 1:kk_T) {
   # thet0 <- -2.5; thet1 <- 2; thet2 <- 1;
   
   # 修正共変量
-  # W <- cbind(rep(1, nrow(XX)), XX)
-  # W_star <- W * TT/2
+  W <- cbind(rep(1, nrow(XX)), XX)
+  W_star <- W * TT/2
   
   # Y_starの生成
   
   # 簡単なケース
-  # SEx <- rep(1.0, n); SPx <- rep(1.0, n);
   SEx <- rep(0.6, n); SPx <- rep(0.65, n);
+  # SEx <- rep(1, n); SPx <- rep(1, n);
 
   # p_Y_star <- SEx*Y + (1-SPx)*(1-Y)
   p_Y_star <- SEx*p_Y + (1-SPx)*(1-p_Y)
@@ -221,47 +219,47 @@ for (i in 1:kk_T) {
   
   # dfの準備
   par_list <- c()
-  for ( j in 1:ncol(XX)) {
-    par_list <- c(par_list, paste("XX",j,sep = ""))
+  for ( j in 1:ncol(W)) {
+    par_list <- c(par_list, paste("W",j,sep = ""))
   }
   
-  # colnames(W)<-par_list
-  # colnames(W_star)<-par_list
+  colnames(W)<-par_list
+  colnames(W_star)<-par_list
   
-  colnames(XX) <- par_list
+  # colnames(XX) <- par_list
   
-  YX_df <- data.frame(Y_star,XX)
-  MOX_df <- data.frame(MO,XX)
-  MOX_df$ID <- 1:nrow(MOX_df)
+  YWs_df <- data.frame(Y_star, W_star)
+  MOWs_df <- data.frame(MO, W_star)
+  MOWs_df$ID <- 1:nrow(MOWs_df)
+  
+  YW_df <- data.frame(Y_star,W)
+  MOW_df <- data.frame(MO,W)
+  MOW_df$ID <- 1:nrow(MOW_df)
   
   # モデルの作成
   # ml <- glm(Y~W_star-1, family=binomial)
-  glm.model <- glm(Y_star ~ XX1 + XX2, data = YX_df, family = binomial)
-  # gee.model <- gee(MO ~ XX1 + XX2, data = MOX_df, id = ID, family = gaussian, corstr = "independence" )
-  gee.model <- geeglm(MO ~ XX1 + XX2, data = MOX_df, id = ID, family = gaussian, corstr = "independence" )
+  glm.model <- glm(Y_star ~ W1 + W2 + W3 -1, data = YWs_df, family = binomial)
+  gee.model <- geeglm(MO ~  W1 + W2 + W3 -1, data = MOWs_df, id = ID, family = gaussian, corstr = "independence" )
   
-  glm.pred <- predict(glm.model, type = "response")
-  gee.pred <- predict(gee.model, type="response")
-  
-  glm.bias <- Y - glm.pred
-  gee.bias <- Y - gee.pred
+  glm.pred <- predict(glm.model, newdata = YW_df, type = "link")
+  gee.pred <- predict(gee.model, newdata = MOW_df, type="link")
   
   
   # スコア計算
-  # lm.pred <- predict(lm.model, newdata=W_df, type="link")
-  # gam.pred <- predict.gam(gam.model, newdata = W_df, type="link")
-  # 
-  # lm.score <- (exp(lm.pred/2)-1) / (exp(lm.pred/2)+1)
-  # gam.score <- (exp(gam.pred/2)-1) / (exp(gam.pred/2)+1)
-  # 
-  # lm.corr <- cor(score_true, lm.score)
-  # gam.corr <- cor(score_true, gam.score)
+  glm.score <- (exp(glm.pred/2)-1) / (exp(glm.pred/2)+1)
+  gee.score <- (exp(gee.pred/2)-1) / (exp(gee.pred/2)+1)
+  
+  glm.corr <- cor(score_true, glm.score)
+  gee.corr <- cor(score_true, gee.score)
+  
+  glm.bias <- score_true - glm.score
+  gee.bias <- score_true - gee.score
   
   
   # 結果保存
-  results.bias_m[i,1] <- glm.bias %>% mean
-  results.bias_m[i,2] <- gee.bias %>% mean
   
+  results.corr[i,1] <- glm.corr
+  results.corr[i,2] <- gee.corr
   
   results.bias1[i,1] <- glm.bias[1]
   results.bias1[i,2] <- gee.bias[1]
@@ -274,6 +272,7 @@ for (i in 1:kk_T) {
   
   results.bias1000[i,1] <- glm.bias[1000]
   results.bias1000[i,2] <- gee.bias[1000]
+  
   
   
   # 図示
@@ -435,25 +434,26 @@ for (i in 1:kk_T) {
 # results.bias100 %>% boxplot()
 # results.bias1000 %>% boxplot()
 
-results.bias_m %>% boxplot()
+# results.bias %>% boxplot()
 
 
 
 ## result_dfの作成----
 result_df <- data.frame(
   group = c("glm","gee"),
+  corr=results.corr %>% apply(2, mean) %>%  round(digits = 5),
   bias1=results.bias1 %>% apply(2,mean) %>% round(digits = 5),
   bias10=results.bias10 %>% apply(2,mean) %>% round(digits = 5),
   bias100=results.bias100 %>% apply(2,mean) %>% round(digits = 5),
   bias1000=results.bias1000 %>% apply(2,mean) %>% round(digits = 5)
   )
 
-result_df %>% pivot_longer(cols = c("bias1","bias10","bias100","bias1000"), names_to = "group", names_repair = "unique")
+result_df %>% pivot_longer(cols = c("corr","bias1","bias10","bias100","bias1000"),names_to = "group")
 # 
 # ## テーブル出力----
 export_tb <- result_df %>% gt(groupname_col = "group")
 # 
-# gtsave(export_tb, "./results/fig/res_table06_glmgee_0731.png")
+# gtsave(export_tb, "./results/fig/res_table06065_0731.png")
 
 
 ## アウトプット
