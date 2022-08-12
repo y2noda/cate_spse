@@ -5,7 +5,11 @@ library(glmnet)
 library(mgcv)
 library(gee)
 library(gt)
+library(gtsummary)
 library(geepack)
+library(nleqslv)
+library(webshot)
+  
 
 ## シュミレーション設定----
 # 初期化
@@ -25,28 +29,28 @@ pb <- txtProgressBar(min = 1, max = kk_T, style = 3)
 # 100以上でglmはエラーになる
 nval <- 2
 
-# results.beta_hat <- data.frame(matrix(vector(), kk_T, nval))
-results.bias_m <- data.frame(matrix(NaN,nrow = kk_T, ncol=2))
-colnames(results.bias_m) <- c("glm", "gee (Modified Outcome)")
+miss_type_list <- c('min','mid','max')
 
-results.bias1 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
-colnames(results.bias1) <- c("lm", "gam")
+# resultの箱
+# results.corrected <- data.frame(matrix(NaN,nrow = kk_T, ncol=4))
+# colnames(results.corrected) <- c("beta1", "beta2", "beta3", "miss_type")
+# 
+# results.naive <- data.frame(matrix(NaN,nrow = kk_T, ncol=4))
+# colnames(results.naive) <- c("beta1", "beta2", "beta3","miss_type")
 
-results.bias10 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
-colnames(results.bias10) <- c("lm", "gam")
+results.corrected <- data.frame(matrix(NaN,nrow = kk_T, ncol=3))
+colnames(results.corrected) <- c("beta1", "beta2", "beta3")
 
-results.bias100 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
-colnames(results.bias100) <- c("lm", "gam")
+results.naive <- data.frame(matrix(NaN,nrow = kk_T, ncol=3))
+colnames(results.naive) <- c("beta1", "beta2", "beta3")
 
-results.bias1000 <- data.frame(matrix(NaN, nrow = kk_T, ncol = 2))
-colnames(results.bias1000) <- c("lm", "gam")
 
 sigmoid <- function(x){
   return( 1 / (1 + exp(-x)) )
 }
 
-
-for (i in 1:kk_T) {
+# for (miss_type in miss_type_list) {
+  for (i in 1:kk_T) {
   setTxtProgressBar(pb,i)
   
   ## 共変量の分布の設定、乱数の発生----
@@ -91,7 +95,7 @@ for (i in 1:kk_T) {
   #                    c(sqrt(6)^-1, (2*sqrt(6))^-1, (2*sqrt(6))^-1)
   # )
   
-  
+
   alpha_0 <- c(0.2, 0.7, 0.7)
   
   # 連続の場合
@@ -118,27 +122,7 @@ for (i in 1:kk_T) {
   }
   
   
-  # lm <- 1.6 * (0.5 + XX[,1] - XX[,2] + XX[,3] - XX[,4] + XX[,1]*XX[,2])
-  # bx <- 2*(beta_0[1] + beta_0[2]*XX[,1])
-  # bx <- 2*(beta_0[1] + beta_0[2]*XX[,1] + beta_0[3]*XX[,2] + 0.8*XX[,1]*XX[,2])
-  # 
-  # score_true <- (exp(bx/2)-1) / (exp(bx/2)+1)
-  
-  # score_true <- (1-exp(bx)) / (1+exp(bx))
-  
-  
-  
   ##　誤判別を含むアウトカムデータの生成----
-  # Misclassified outcomesの割合の設定
-  # p_Y <- exp(Y_lm)/(1+exp(Y_lm))
-  # pp10 <- 0; pp01 <- 0
-  # 
-  # Y <- rep(0,n)
-  # for(j in 1:n){
-  #   p_Yc <- pp10*(1-p_Y[j])+(1-pp01)*p_Y[j]
-  #   Y[j] <-rbinom(1, size=1, prob=p_Yc)
-  # }
-  
   
   # 感度・特異度に関する設定
   # thet0 <- -2.5; thet1 <- 2; thet2 <- 1; thet3 <- -1; thet4 <- -0.2;
@@ -152,7 +136,21 @@ for (i in 1:kk_T) {
   
   # 簡単なケース
   # SEx <- rep(1.0, n); SPx <- rep(1.0, n);
-  SEx <- rep(0.9, n); SPx <- rep(0.95, n);
+  SEx <- rep(0.5, n); SPx <- rep(0.55, n);
+  
+  # SEx <- switch(miss_type,
+  #              "min" = rep(0.7, n),
+  #              "mid" = rep(0.8, n),
+  #              "max" = rep(0.9, n),
+  #              stop("error")
+  # )
+  # 
+  # SPx <- switch(miss_type,
+  #               "min" = rep(0.75, n),
+  #               "mid" = rep(0.85, n),
+  #               "max" = rep(0.95, n),
+  #               stop("error")
+  # )
   
   # p_Y_star <- SEx*Y + (1-SPx)*(1-Y)
   p_Y_star <- SEx*p_Y + (1-SPx)*(1-p_Y)
@@ -161,63 +159,13 @@ for (i in 1:kk_T) {
     Y_star[j] <-rbinom(1, size=1, prob=p_Y_star[j])
   }
   
-  ## バリデーションデータの分割----
-  
-  # Y_star_v <- Y_star[1:20]; Y_star_m <- Y_star[21:100];
-  # Y_v <- Y[1:20]; Y_m <- Y[21:100]; # Y_mは観測できない
-  # XX_v <- XX[1:20, ]; XX_m <- XX[21:100, ];
-  # TT_v <- TT[1:20]; TT_m <- TT[21:100];
-  # W_star_v <- W_star[1:20,]; W_star_m <- W_star[21:100,];
-  # W_v <- W[1:20,]; W_m <- W[21:100,];
-  
-  ## 感度・特異度の推定----
-  
-  # YW_v <- cbind(Y_v, W_star_v)
-  # 
-  # # glm(Y_star ~ Y + W_star[,2:4], family=binomial)
-  # model <- glm(Y_star_v ~ YW_v, family=binomial) #推定がおかしい、完全分離している
-  # 
-  # YW_v1 <- YW_v[YW_v[,1]==1,] %>% data.frame()
-  # YW_v0 <- YW_v[YW_v[,1]==0,] %>% data.frame()
-  # 
-  # SEx = predict(model, newdata=YW_v1, type="response")
-  # SPx = 1 - predict(model, newdata=YW_v0, type="response")
-  
-  
-  ## 尤度関数の定義----
-  
-  # like_fun <- function(par_list){
-  #   # W_star_lm <- 0
-  #   # index <- 1
-  #   # for (par in par_list) {
-  #   #   W_star_lm <- W_star_lm + W_star[,index]%*%par
-  #   #   index <- index +1
-  #   # }
-  #   
-  #   W_star_lm <- W_star %*% par_list
-  # 
-  #   py1 <- exp(W_star_lm)/(1+exp(W_star_lm))
-  #   
-  #   # 尤度
-  #   term1mn <- ((1-SPx)*(1-py1) + SEx*py1)^Y_star
-  #   term2mn <- (SPx*(1-py1) + (1-SEx)*py1)^(1-Y_star)
-  #   
-  #   term1v <- (SEx*py1)^(Y[1:20]*Y_v)
-  #   term2v <- ((1 - SPx)*(1-py1))^(Y_star_v*(1 - Y_v))
-  #   term3v <- ((1 - SEx)*py1)^((1 - Y_star_v)*Y_v)
-  #   term4v <- (SPx*(1-py1))^((1 - Y_star_v)*(1 - Y_v))
-  #   
-  #   intval <- c(rep(1,20),rep(0,80))
-  #   
-  #   like = ((term1mn*term2mn)^(1 - intval))*((term1v*term2v*term3v*term4v)^intval)
-  #   return(-sum(like))
-  #   
-  # }
-  
   
   ## パラメータ推定----
   
-  # Corrected Outcom
+  # Naive estimate
+  ml <- glm(Y_star~XX, family=binomial)
+  
+  # Corrected Outcome
   CO <- (Y_star - (1-SPx)) / (SEx + SPx -1)
   
   # 推定方程式
@@ -226,233 +174,27 @@ for (i in 1:kk_T) {
     t(X) %*% (sigmoid(X %*% beta)*(1-sigmoid(X %*% beta))*(co - sigmoid(X %*% beta)))
   }
   
-  
-  library(nleqslv)
-  
   XX_1 <- cbind(rep(1,n), XX)
   
   fn1 <- function(beta) fn(XX_1, CO, beta)
   ans <- nleqslv(c(0.1, 0.1, 0.1), fn1)
   
+  ### 結果の保存
+  # j <- switch(miss_type,
+  #               "min" = 0,
+  #               "mid" = kk_T,
+  #               "max" = 2*kk_T,
+  #               stop("error")
+  # )
   
+  # results.corrected[i+j,] <- c(ans$x, miss_type)
+  # results.naive[i+j,] <- c(ml$coefficients, miss_type)
   
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  # dfの準備
-  par_list <- c()
-  for ( j in 1:ncol(XX)) {
-    par_list <- c(par_list, paste("XX",j,sep = ""))
-  }
-  
-  # colnames(W)<-par_list
-  # colnames(W_star)<-par_list
-  
-  colnames(XX) <- par_list
-  
-  YX_df <- data.frame(Y_star,XX)
-  COX_df <- data.frame(CO,XX)
-  COX_df$ID <- 1:nrow(COX_df)
-  
-  # モデルの作成
-  # ml <- glm(Y~W_star-1, family=binomial)
-  glm.model <- glm(Y_star ~ XX1 + XX2, data = YX_df, family = binomial)
-  # gee.model <- gee(CO ~ XX1 + XX2, data = COX_df, id = ID, family = gaussian, corstr = "independence" )
-  gee.model <- geeglm(CO ~ XX1 + XX2, data = COX_df, id = ID, family = gaussian, corstr = "independence" )
-  
-  glm.pred <- predict(glm.model, type = "response")
-  gee.pred <- predict(gee.model, type="response")
-  
-  glm.bias <- Y - glm.pred
-  gee.bias <- Y - gee.pred
-  
-  
-  # スコア計算
-  # lm.pred <- predict(lm.model, newdata=W_df, type="link")
-  # gam.pred <- predict.gam(gam.model, newdata = W_df, type="link")
-  # 
-  # lm.score <- (exp(lm.pred/2)-1) / (exp(lm.pred/2)+1)
-  # gam.score <- (exp(gam.pred/2)-1) / (exp(gam.pred/2)+1)
-  # 
-  # lm.corr <- cor(score_true, lm.score)
-  # gam.corr <- cor(score_true, gam.score)
-  
-  
-  # 結果保存
-  results.bias_m[i,1] <- glm.bias %>% mean
-  results.bias_m[i,2] <- gee.bias %>% mean
-  
-  
-  results.bias1[i,1] <- glm.bias[1]
-  results.bias1[i,2] <- gee.bias[1]
-  
-  results.bias10[i,1] <- glm.bias[10]
-  results.bias10[i,2] <- gee.bias[10]
-  
-  results.bias100[i,1] <- glm.bias[100]
-  results.bias100[i,2] <- gee.bias[100]
-  
-  results.bias1000[i,1] <- glm.bias[1000]
-  results.bias1000[i,2] <- gee.bias[1000]
-  
-  
-  # 図示
-  # plot(YW_star_df$Y ~ YW_df$W_star2)
-  # 
-  # sigmoid = function(x) {1 / (1 + exp(-x))}
-  # 
-  # lines(sigmoid(lm.pred) ~ YW_df$W_star2, col=2, lwd=0.1)
-  # lines(sigmoid(gam.pred) ~ YW_df$W_star2, col=4, lwd=0.1)
-  # 
-  # vis.gam(gam.model, color="cm", theta=45)
-  
-  
-  
-  # 感度特異度を考慮した推定
-  # par_list <- c()
-  # for ( j in 1:ncol(W_star)) {
-  #   par_list <- c(par_list, paste("W_star",j,sep = ""))
-  # }
-  #   
-  # library(bbmle)
-  # parnames(like_fun)<-par_list
-  # res <- mle2(like_fun, start=setNames(rep(0,ncol(W_star)), par_list), vecpar = TRUE)
-  # 
-  # val_pred <- W%*%coef(res)
-  # 
-  # score_val <- (exp(val_pred/2)-1) / (exp(val_pred/2)+1)
-  # 
-  # corr.val <- cor(score_true, score_val)
-  # 
-  # results.corr[i,2] <- corr.val
-  # 
-  # results.bias[i,2] <- mean(score_true - score_val)
-  # 
-  # results.var[i,2] <- var(score_true - score_val)
-  
-  # 傾向スコアの算出
-  # ps_fit <- glm(TT~XX, family=binomial)$fit
-  # MSMのためのウェイト
-  # ps_w <- ifelse(TT==1, 1/ps_fit, 1/(1-ps_fit))
-  
-  
-  ## 連続の場合
-  # modified covariance method
-  # W <- cbind(rep(1, n), XX)
-  # W_star <- W * TT/2
-  # 
-  # W_star.scaled <- scale(W_star)
-  # # beta_hat <- glm(Y_lm ~ W_star +0 , family = gaussian)$coef
-  # lasso.model.cv <- cv.glmnet(x = W_star, y = Y_lm, family = "gaussian", alpha = 1, nfolds = 10)
-  # 
-  # lasso.model <- glmnet(x = W_star, y = Y_lm, family = "gaussian", alpha = 1)
-  # 
-  # mc_pred <- predict(lasso.model.cv,
-  #                      newx = W,
-  #                      alpha=1,
-  #                      s = lasso.model.cv$lambda.min)
-  # 
-  # corr.mc <- cor(score_true, mc_pred)
-  # 
-  # results.corr[i,2] <- corr.mc
-  # # 
-  # 
-  # # Full regression
-  # XX_1 <- cbind(rep(1, n), XX)
-  # 
-  # XX_full <- XX_1
-  # for (j in seq(ncol(XX_1))) {
-  #   XX_full <- cbind(XX_full, XX_1[,j]*TT)
-  # }
-  # 
-  # XX_full.scaled <- scale(XX_full)
-  # 
-  # lasso.model.cv <- cv.glmnet(x = XX_full, y = Y_lm, family = "gaussian", alpha = 1, nfolds = 10) 
-  # 
-  # lasso.model <- glmnet(x = XX_full, y = Y_lm, family = "gaussian", alpha = 1)
-  # 
-  # XX_full[,1:51] <- 0
-  # XX_full <- XX_full * TT
-  # 
-  # full_pred <- predict(lasso.model.cv,
-  #                 newx = XX_full,
-  #                 alpha=1,
-  #                 s = lasso.model.cv$lambda.min)
-  # 
-  # # beta <-coef(lasso.model, s = lasso.model.cv$lambda.min)
-  # 
-  # corr.full <- cor(score_true, full_pred)
-  # 
-  # results.corr[i,1] <- corr.full
-  
-  
-  
-  ## ２値の場合
-  # modified covariance method
-  # W <- cbind(rep(1, n), XX)
-  # W_star <- W * TT/2
-  # 
-  # W_star.scaled <- scale(W_star)
-  # # beta_hat <- glm(Y_lm ~ W_star +0 , family = gaussian)$coef
-  # lasso.model.cv <- cv.glmnet(x = W_star, y = Y_star, family = "binomial", alpha = 1, nfolds = 10)
-  # 
-  # lasso.model <- glmnet(x = W_star, y = Y_star, family = "binomial", alpha = 1)
-  # 
-  # mc_pred <- predict(lasso.model.cv,
-  #                    newx = W,
-  #                    alpha=1,
-  #                    s = lasso.model.cv$lambda.min)
-  # 
-  # score_mc <- (exp(mc_pred/2)-1) / (exp(mc_pred/2)+1)
-  # 
-  # corr.mc <- cor(score_true, score_mc)
-  # 
-  # results.corr[i,1] <- corr.mc
-  # 
-  # 
-  # results.bias[i,1] <- mean(score_true - score_mc)
-  # 
-  # results.var[i,1] <- var(score_true - score_mc)
-  # 
-  
-  # Full regression
-  # XX_1 <- cbind(rep(1, n), XX)
-  # 
-  # XX_full <- XX_1
-  # for (j in seq(ncol(XX_1))) {
-  #   XX_full <- cbind(XX_full, XX_1[,j]*TT)
-  # }
-  # 
-  # XX_full.scaled <- scale(XX_full)
-  # 
-  # lasso.model.cv <- cv.glmnet(x = XX_full, y = Y, family = "binomial", alpha = 1, nfolds = 10) 
-  # 
-  # lasso.model <- glmnet(x = XX_full, y = Y, family = "binomial", alpha = 1)
-  # 
-  # XX_full[,1:51] <- 0
-  # XX_full <- XX_full * TT
-  # 
-  # full_pred <- predict(lasso.model.cv,
-  #                      newx = XX_full,
-  #                      alpha=1,
-  #                      s = lasso.model.cv$lambda.min)
-  # 
-  # score_full <- (exp(full_pred/2)-1) / (exp(full_pred/2)+1)
-  # # beta <-coef(lasso.model, s = lasso.model.cv$lambda.min)
-  # 
-  # corr.full <- cor(score_true, score_full)
-  # 
-  # results.corr[i,1] <- corr.full
-  
-  
+  results.corrected[i,] <- c(ans$x)
+  results.naive[i,] <- c(ml$coefficients)
+
 }
+# }
 
 
 ##　ボックスプロット----
@@ -462,25 +204,24 @@ for (i in 1:kk_T) {
 # results.bias100 %>% boxplot()
 # results.bias1000 %>% boxplot()
 
-results.bias_m %>% boxplot()
-
-
-
 ## result_dfの作成----
-result_df <- data.frame(
-  group = c("glm","gee"),
-  bias1=results.bias1 %>% apply(2,mean) %>% round(digits = 5),
-  bias10=results.bias10 %>% apply(2,mean) %>% round(digits = 5),
-  bias100=results.bias100 %>% apply(2,mean) %>% round(digits = 5),
-  bias1000=results.bias1000 %>% apply(2,mean) %>% round(digits = 5)
-)
+# result_df <- data.frame(
+cor_df <- data.frame(results.corrected, method='corrected')
+naive_df <- data.frame(results.naive, method='naive')
+temp_df<- rbind(cor_df,naive_df) 
 
-result_df %>% pivot_longer(cols = c("bias1","bias10","bias100","bias1000"), names_to = "group", names_repair = "unique")
-# 
-# ## テーブル出力----
-export_tb <- result_df %>% gt(groupname_col = "group")
-# 
-# gtsave(export_tb, "./results/fig/res_table06_glmgee_0731.png")
+# min_df <- temp_df %>% filter(miss_type=='min') %>% select(-miss_type)
+
+
+theme_gtsummary_mean_sd()
+result_df <- temp_df %>% tbl_summary(by=method, digits = everything()~2) %>% 
+  modify_header(label="Odds ratio") %>% 
+  modify_footnote(label ='真値:(0.2, 0.7, 0.7)') %>% 
+  # modify_caption("SE, SP = ( 0.8, 0.85 )の時")
+  modify_caption("SE, SP = ( 0.5, 0.55 )の時")
+
+## テーブル出力----
+result_df %>% as_gt() %>% gtsave("./results/table/0808/res_table05055.png")
 
 
 ## アウトプット
@@ -493,3 +234,4 @@ export_tb <- result_df %>% gt(groupname_col = "group")
 # df <- read_csv2("~/gamma_DR_ver0.1/results/tian/misbin_nval50.csv")
 # df %>% summary()
 # df %>% boxplot()
+
